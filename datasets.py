@@ -1,11 +1,13 @@
 import os
 from glob import glob
 from typing import NamedTuple
+from itertools import groupby
 
 from PIL import Image
 from PIL.Image import Image as ImageType
 import torch
 import numpy as np
+from tqdm import tqdm
 import pandas as pd
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
@@ -14,9 +16,10 @@ import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 
 from endaaman import grid_split
-from endaaman.ml import get_global_seed
+from endaaman.ml import BaseMLCLI, get_global_seed
 
 
+J = os.path.join
 Image.MAX_IMAGE_PIXELS = 8_000_000_000
 
 BASE_DIR = 'datasets/FM_vs_SFT'
@@ -101,12 +104,12 @@ class ImageDataset(Dataset):
         self.df = self.load_df()
         self.items = self.load_data()
 
-
     def load_df(self):
         data = []
         for label in LABELS:
             for path in sorted(glob(os.path.join(BASE_DIR, label, '*.jpg'))):
                 name = os.path.splitext(os.path.basename(path))[0]
+                name = name.rsplit('_', 1)[0]
                 data.append({
                     'path': path,
                     'name': name,
@@ -131,8 +134,7 @@ class ImageDataset(Dataset):
     def load_data(self):
         labels = ['FM', 'SFT']
         items = []
-        print(f'start loading {len(self.df)} images')
-        for i, row in self.df.iterrows():
+        for i, row in tqdm(self.df.iterrows(), leave=False, total=len(self.df)):
             image = Image.open(row['path'])
             ii = grid_split(image, self.input_size, overwrap=False, flattern=True)
             for idx, i in enumerate(ii):
@@ -145,7 +147,7 @@ class ImageDataset(Dataset):
                     test=row['test'],
                 )
                 items.append(item)
-        print('loaded')
+        print(f'[{self.target}] {len(self.df)} images loaded.')
         return items
 
     def __len__(self):
@@ -157,8 +159,35 @@ class ImageDataset(Dataset):
         y = torch.tensor(LABEL_TO_NUM[item.label])[None].float()
         return x, y
 
+class CLI(BaseMLCLI):
+    class CommonArgs(BaseMLCLI.CommonArgs):
+        pass
+
+    class SamplesArgs(CommonArgs):
+        dest: str = 'out/samples/'
+        size: int = 512
+
+    def run_samples(self, a:SamplesArgs):
+        ds = ImageDataset(target='all', crop_size=a.size, input_size=a.size)
+
+        def key_func(k):
+            return k.name
+        groups = groupby(ds.items, key_func)
+
+        for name, ii in groups:
+            ii = list(ii)
+            idxs = np.random.choice(len(ii), size=5, replace=False)
+            order = 0
+            for idx in idxs:
+                item = ii[idx]
+                t = 'test' if item.test else 'train'
+                d = J(a.dest, t)
+                os.makedirs(d, exist_ok=True)
+                i = item.image.crop((0 ,0, 512, 512))
+                i.save(J(d, f'{name}_{order}.png'))
+                order += 1
+
 
 if __name__ == '__main__':
-    ds = ImageDataset(target='all')
-    for x, y in ds:
-        break
+    cli = CLI()
+    cli.run()
