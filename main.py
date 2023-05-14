@@ -23,19 +23,8 @@ from models import TimmModel
 from datasets import ImageDataset, LABELS, LABEL_TO_NUM
 
 
-class ROCMetrics(BaseMetrics):
-    def calc(self, preds, gts):
-        if len(preds) < 10:
-            return None
-        preds = preds.detach().cpu().numpy()
-        gts = gts.detach().cpu().numpy()
-        fpr, tpr, __thresholds = skmetrics.roc_curve(gts, preds)
-        auc = skmetrics.auc(fpr, tpr)
-        youden_index = np.argmax(tpr - fpr)
-        return auc, tpr[youden_index], -fpr[youden_index]+1
-
-
 class TrainerConfig(BaseTrainerConfig):
+    revision: int = 1
     model_name:str
     crop_size: int
     input_size: int
@@ -52,10 +41,26 @@ class Trainer(BaseTrainer):
         loss = self.criterion(preds, gts.to(self.device))
         return loss, preds.detach().cpu()
 
-    def get_metrics(self):
-        return {
-            'auc_recall_spec': ROCMetrics(),
-        }
+    def visualize_roc(self, ax, train_preds, train_gts, val_preds, val_gts):
+        for t, preds, gts in (('train', train_preds, train_gts), ('val', val_preds, val_gts)):
+            fpr, tpr, thresholds = skmetrics.roc_curve(gts, preds)
+            auc = skmetrics.auc(fpr, tpr)
+            ax.plot(fpr, tpr, label=f'{t} AUC:{auc:.3f}')
+        ax.set_title('ROC')
+        ax.set_ylabel('Sensitivity')
+        ax.set_xlabel('1 - Specificity')
+        ax.legend(loc='lower right')
+
+    def metrics_auc_recall_spec(self, preds, gts):
+        if len(preds) < 30:
+            return None
+        preds = preds.detach().cpu().numpy()
+        gts = gts.detach().cpu().numpy()
+        fpr, tpr, __thresholds = skmetrics.roc_curve(gts, preds)
+        auc = skmetrics.auc(fpr, tpr)
+        youden_index = np.argmax(tpr - fpr)
+        return auc, tpr[youden_index], -fpr[youden_index]+1
+
 
 class CLI(BaseMLCLI):
     class CommonArgs(BaseDLArgs):

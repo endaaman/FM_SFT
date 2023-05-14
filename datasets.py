@@ -72,12 +72,14 @@ class ImageDataset(Dataset):
                  test_ratio=0.25,
                  aug_mode='same',
                  normalize=True,
-                 seed=get_global_seed()
+                 seed=get_global_seed(),
+                 autoload=True,
                  ):
         self.target = target
         self.input_size = input_size
         self.test_ratio = test_ratio
         self.seed = seed
+        self.autoload = autoload
 
         self.aug_mode = aug_mode
         self.normalize = normalize
@@ -102,7 +104,7 @@ class ImageDataset(Dataset):
         self.albu = A.Compose(aug)
 
         self.df = self.load_df()
-        self.items = self.load_data()
+        self.items = self.load_data() if autoload else []
 
     def load_df(self):
         data = []
@@ -199,6 +201,13 @@ class CLI(BaseMLCLI):
                 order += 1
 
 
+
+    class DfArgs(CommonArgs):
+        size: int = 512
+
+    def run_df(self, a:SamplesArgs):
+        ds = ImageDataset(target='all', crop_size=a.size, input_size=a.size, autoload=False)
+        ds.df.to_excel('out/df.xlsx')
 
 
 if __name__ == '__main__':
