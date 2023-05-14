@@ -184,7 +184,7 @@ class CLI(BaseMLCLI):
                 d = J(a.dest, t)
                 os.makedirs(d, exist_ok=True)
                 i = item.image.crop((0 ,0, 512, 512))
-                i.save(J(d, f'{name}_{order}.png'))
+                i.save(J(d, f'{item.label}_{name}_{order}.png'))
                 order += 1
 
 
