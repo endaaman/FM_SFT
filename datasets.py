@@ -3,7 +3,7 @@ from glob import glob
 from typing import NamedTuple
 from itertools import groupby
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as ImageType
 import torch
 import numpy as np
@@ -159,6 +159,8 @@ class ImageDataset(Dataset):
         y = torch.tensor(LABEL_TO_NUM[item.label])[None].float()
         return x, y
 
+
+
 class CLI(BaseMLCLI):
     class CommonArgs(BaseMLCLI.CommonArgs):
         pass
@@ -174,6 +176,8 @@ class CLI(BaseMLCLI):
             return k.name
         groups = groupby(ds.items, key_func)
 
+        font = ImageFont.truetype('/usr/share/fonts/ubuntu/Ubuntu-M.ttf', 24)
+
         for name, ii in groups:
             ii = list(ii)
             idxs = np.random.choice(len(ii), size=5, replace=False)
@@ -184,8 +188,17 @@ class CLI(BaseMLCLI):
                 d = J(a.dest, t)
                 os.makedirs(d, exist_ok=True)
                 i = item.image.crop((0 ,0, 512, 512))
+
+                draw = ImageDraw.Draw(i)
+                text = f'{item.label} {name}'
+                box = draw.textbbox((0, 0), text, font=font)
+                draw.rectangle(box, fill='black')
+                draw.text((0, 0), text, font=font, fill='white')
+
                 i.save(J(d, f'{item.label}_{name}_{order}.png'))
                 order += 1
+
+
 
 
 if __name__ == '__main__':
