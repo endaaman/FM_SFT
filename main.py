@@ -2,6 +2,7 @@ import os
 import re
 from glob import glob
 import base64
+import json
 
 import numpy as np
 import torch
@@ -15,13 +16,16 @@ import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import Field
 
-from endaaman.ml import BaseDLArgs, BaseMLCLI, BaseTrainer, BaseTrainerConfig
+from endaaman import load_images_from_dir_or_file, grid_split_by_size
+from endaaman.ml import BaseDLArgs, BaseMLCLI, BaseTrainer, BaseTrainerConfig, pil_to_tensor
 from endaaman.metrics import MultiAccuracy, AccuracyByChannel, BaseMetrics
 from endaaman.functional import multi_accuracy
 
 from models import TimmModel
 from datasets import ImageDataset, LABELS, LABEL_TO_NUM
 
+
+J = os.path.join
 
 class TrainerConfig(BaseTrainerConfig):
     revision: int = 1
@@ -46,7 +50,10 @@ class Trainer(BaseTrainer):
             fpr, tpr, thresholds = skmetrics.roc_curve(gts, preds)
             auc = skmetrics.auc(fpr, tpr)
             ax.plot(fpr, tpr, label=f'{t} AUC:{auc:.3f}')
-        ax.set_title('ROC')
+            if t == 'train':
+                youden_index = np.argmax(tpr - fpr)
+                threshold = thresholds[youden_index]
+        ax.set_title(f'ROC (t={threshold:.2f})')
         ax.set_ylabel('Sensitivity')
         ax.set_xlabel('1 - Specificity')
         ax.legend(loc='lower right')
@@ -112,6 +119,29 @@ class CLI(BaseMLCLI):
         )
 
         trainer.start(a.epoch)
+
+
+    class PredictArgs(CommonArgs):
+        model_dir: str = Field(..., cli=('--dir', '-d'))
+        src: str = Field(..., cli=('--src', '-s'))
+
+    def run_predict(self, a:PredictArgs):
+        checkpoint = torch.load(J(a.model_dir, 'checkpoint_best.pt'))
+        with open(J(a.model_dir, 'config.json'), mode='r', encoding='utf-8') as f:
+            config = json.load(f)
+            config = TrainerConfig(**config)
+        model = TimmModel(name=config.model_name, num_classes=1)
+        model.load_state_dict(checkpoint.model_state)
+
+        image = load_images_from_dir_or_file(a.src, with_path=False)[0]
+        ii = grid_split_by_size(image, 512, flattern=True)
+
+        for i in ii:
+            print(i.size)
+            t = pil_to_tensor(i)[None, ...]
+            p = model(t, activate=True)
+            print(p, p > 0.47)
+
 
 
 if __name__ == '__main__':
