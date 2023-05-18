@@ -15,9 +15,11 @@ from tqdm import tqdm
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import Field
+import pytorch_grad_cam as CAM
+from pytorch_grad_cam.utils.model_targets import BinaryClassifierOutputTarget
 
 from endaaman import load_images_from_dir_or_file, grid_split_by_size
-from endaaman.ml import BaseDLArgs, BaseMLCLI, BaseTrainer, BaseTrainerConfig, pil_to_tensor
+from endaaman.ml import BaseDLArgs, BaseMLCLI, BaseTrainer, BaseTrainerConfig, pil_to_tensor, tensor_to_pil, overlay_heatmap
 from endaaman.metrics import MultiAccuracy, AccuracyByChannel, BaseMetrics
 from endaaman.functional import multi_accuracy
 
@@ -130,18 +132,34 @@ class CLI(BaseMLCLI):
         with open(J(a.model_dir, 'config.json'), mode='r', encoding='utf-8') as f:
             config = json.load(f)
             config = TrainerConfig(**config)
+        device = 'cuda'
         model = TimmModel(name=config.model_name, num_classes=1)
         model.load_state_dict(checkpoint.model_state)
+        model.to(device)
 
-        image = load_images_from_dir_or_file(a.src, with_path=False)[0]
-        ii = grid_split_by_size(image, 512, flattern=True)
+        images, paths = load_images_from_dir_or_file(a.src, with_path=True)
+        image, path = images[0], paths[0]
+        name = os.path.splitext(os.path.basename(path))[0]
 
-        for i in ii:
-            print(i.size)
-            t = pil_to_tensor(i)[None, ...]
-            p = model(t, activate=True)
-            print(p, p > 0.47)
+        gradcam = CAM.GradCAM(
+            model=model,
+            target_layers=[model.get_cam_layer()],
+            use_cuda=device=='cuda')
 
+        T = 0.47
+        t = pil_to_tensor(image)
+        t = t[:, :512, :512]
+        image = tensor_to_pil(t)
+        t = t[None, ...]
+        p = model(t.to(device), activate=True).cpu()
+        targets = [BinaryClassifierOutputTarget(p > T)]
+        mask = torch.from_numpy(gradcam(input_tensor=t, targets=targets))
+        heatmap, masked = overlay_heatmap(mask, pil_to_tensor(image), alpha=0.3, threshold=0.5)
+        d = f'{a.model_dir}/predict'
+        os.makedirs(d, exist_ok=True)
+        image.save(f'{d}/{name}.png')
+        tensor_to_pil(masked).save(f'{d}/{name}_masked.png')
+        print(p, p > T)
 
 
 if __name__ == '__main__':
