@@ -30,7 +30,7 @@ from datasets import ImageDataset, LABELS, LABEL_TO_NUM
 J = os.path.join
 
 class TrainerConfig(BaseTrainerConfig):
-    revision: int = 1
+    fold: int
     model_name:str
     crop_size: int
     input_size: int
@@ -80,6 +80,7 @@ class CLI(BaseMLCLI):
         batch_size: int = 16
         num_workers: int = 4
         epoch: int = 10
+        fold: int = -1
         model_name: str = Field('tf_efficientnetv2_b0', cli=('--model', '-m'))
         suffix: str = ''
         crop_size: int = Field(512, cli=('--crop-size', '-c'))
@@ -92,6 +93,7 @@ class CLI(BaseMLCLI):
             batch_size=a.batch_size,
             num_workers=a.num_workers,
             lr=a.lr,
+            fold=a.fold,
             model_name=a.model_name,
             crop_size=a.size if a.size > 0 else a.crop_size,
             input_size=a.size if a.size > 0 else a.input_size,
@@ -103,11 +105,12 @@ class CLI(BaseMLCLI):
                 aug_mode='same',
                 crop_size=config.crop_size,
                 input_size=config.input_size,
+                fold=a.fold,
                 seed=a.seed,
             ) for t in ('train', 'test')
         ]
 
-        out_dir = f'out/models/{config.model_name}'
+        out_dir = f'out/models/{config.model_name}_{a.fold}'
         if a.suffix:
             out_dir += f'_{a.suffix}'
 

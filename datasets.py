@@ -5,7 +5,7 @@ from itertools import groupby
 
 from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as ImageType
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -29,7 +29,7 @@ LABEL_TO_NUM = {k:i for i, k in enumerate(LABELS) }
 
 class Item(NamedTuple):
     path: str
-    name: str
+    patient: str
     label: str
     image: ImageType
     index: int
@@ -106,10 +106,19 @@ class ImageDataset(Dataset):
 
         self.albu = A.Compose(aug)
 
-        self.df = self.load_df()
+        df = self.load_df()
+        if fold < 0:
+            # split by filenames
+            self.df = self.split_by_files(df)
+        else:
+            # split by patient folds
+            folds = self.split_folds(num_folds)
+            fold = folds[fold]
+            self.df = self.split_by_fold(df, fold)
+        print(self.df)
         self.items = self.load_data() if autoload else []
 
-    def load_df(self):
+    def split_folds(self, num_folds):
         patients = {}
         for label in LABELS:
             patients[label] = set()
@@ -118,18 +127,44 @@ class ImageDataset(Dataset):
                 patient = name.rsplit('_', 1)[0]
                 patients[label].add(patient)
 
-        print(patients)
-        return
+        kf = KFold(n_splits=num_folds, shuffle=True, random_state=self.seed)
 
-        kf = KFold(n_splits=self.num_folds, shuffle=True, random_state=seed)
-        # for label, data_by_label in data.items():
-        # kf.split():
+        folds = [
+            {'train': [], 'test': []}
+            for _ in range(num_folds)
+        ]
+        for label, data_by_label in patients.items():
+            pp = list(data_by_label)
+            for fold, (train_idx, test_idx) in enumerate(kf.split(pp)):
+                folds[fold]['train'] += [pp[i] for i in train_idx]
+                folds[fold]['test'] += [pp[i] for i in test_idx]
 
+        return folds
 
+    def split_by_fold(self, df, fold):
+        for t in ('train', 'test'):
+            df.loc[df['patient'].isin(fold[t]), 'test'] = t == 'test'
+        return df
 
+    def load_df(self):
+        data = []
+        for label in LABELS:
+            for path in sorted(glob(os.path.join(BASE_DIR, label, '*.jpg'))):
+                name = os.path.splitext(os.path.basename(path))[0]
+                patient = name.rsplit('_', 1)[0]
+                data.append({
+                    'path': path,
+                    'patient': patient,
+                    'label': label,
+                    # 'test': False,
+                })
         df_all = pd.DataFrame(data)
         assert len(df_all) > 0, 'NO IMAGES FOUND'
-        df_train, df_test = train_test_split(df_all, test_size=self.test_ratio, stratify=df_all['label'], random_state=self.seed)
+        return df_all
+
+    def split_by_files(self, df):
+        df['test'] = False
+        df_train, df_test = train_test_split(df, test_size=1/self.num_folds, stratify=df['label'], random_state=self.seed)
         df_test['test'] = True
 
         if self.target == 'train':
@@ -151,7 +186,7 @@ class ImageDataset(Dataset):
             for idx, i in enumerate(ii):
                 item = Item(
                     path=row['path'],
-                    name=row['name'],
+                    patient=row['patient'],
                     label=row['label'],
                     image=i,
                     index=idx,
@@ -215,7 +250,7 @@ class CLI(BaseMLCLI):
         size: int = 512
 
     def run_df(self, a:SamplesArgs):
-        ds = ImageDataset(target='all', crop_size=a.size, input_size=a.size, autoload=False)
+        ds = ImageDataset(target='all', crop_size=a.size, input_size=a.size, autoload=False, fold=2)
         # ds.df.to_excel('out/df.xlsx')
         self.ds = ds
 
