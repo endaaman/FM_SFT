@@ -5,6 +5,7 @@ from itertools import groupby
 
 from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as ImageType
+from sklearn.model_selection import KFold
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -69,7 +70,8 @@ class ImageDataset(Dataset):
                  target,
                  crop_size=512,
                  input_size=512,
-                 test_ratio=0.25,
+                 fold=1,
+                 num_folds=5,
                  aug_mode='same',
                  normalize=True,
                  seed=get_global_seed(),
@@ -77,7 +79,8 @@ class ImageDataset(Dataset):
                  ):
         self.target = target
         self.input_size = input_size
-        self.test_ratio = test_ratio
+        self.fold = fold
+        self.num_folds = num_folds
         self.seed = seed
         self.autoload = autoload
 
@@ -107,17 +110,23 @@ class ImageDataset(Dataset):
         self.items = self.load_data() if autoload else []
 
     def load_df(self):
-        data = []
+        patients = {}
         for label in LABELS:
+            patients[label] = set()
             for path in sorted(glob(os.path.join(BASE_DIR, label, '*.jpg'))):
                 name = os.path.splitext(os.path.basename(path))[0]
-                name = name.rsplit('_', 1)[0]
-                data.append({
-                    'path': path,
-                    'name': name,
-                    'label': label,
-                    'test': False,
-                })
+                patient = name.rsplit('_', 1)[0]
+                patients[label].add(patient)
+
+        print(patients)
+        return
+
+        kf = KFold(n_splits=self.num_folds, shuffle=True, random_state=seed)
+        # for label, data_by_label in data.items():
+        # kf.split():
+
+
+
         df_all = pd.DataFrame(data)
         assert len(df_all) > 0, 'NO IMAGES FOUND'
         df_train, df_test = train_test_split(df_all, test_size=self.test_ratio, stratify=df_all['label'], random_state=self.seed)
@@ -207,7 +216,8 @@ class CLI(BaseMLCLI):
 
     def run_df(self, a:SamplesArgs):
         ds = ImageDataset(target='all', crop_size=a.size, input_size=a.size, autoload=False)
-        ds.df.to_excel('out/df.xlsx')
+        # ds.df.to_excel('out/df.xlsx')
+        self.ds = ds
 
 
 if __name__ == '__main__':
