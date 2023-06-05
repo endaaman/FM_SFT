@@ -76,8 +76,8 @@ class CLI(BaseMLCLI):
         pass
 
     class TrainArgs(CommonArgs):
-        lr: float = 0.0001
-        batch_size: int = 8
+        lr: float = 0.0002
+        batch_size: int = 16
         num_workers: int = 4
         epoch: int = 10
         model_name: str = Field('tf_efficientnetv2_b0', cli=('--model', '-m'))
