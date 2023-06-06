@@ -77,16 +77,15 @@ class CLI(BaseMLCLI):
 
     class TrainArgs(CommonArgs):
         lr: float = 0.0002
-        batch_size: int = 16
-        num_workers: int = 4
-        epoch: int = 10
+        batch_size: int = Field(16, cli=('--batch-size', ))
+        epoch: int = 20
         fold: int = -1
         model_name: str = Field('tf_efficientnetv2_b0', cli=('--model', '-m'))
         suffix: str = ''
         crop_size: int = Field(512, cli=('--crop-size', '-c'))
         input_size: int = Field(512, cli=('--input-size', '-i'))
         size: int = Field(-1, cli=('--size', '-s'))
-        overwrite: bool = Field(False, cli=('--overwrite', '-o'))
+        overwrite: bool = Field(False, cli=('--overwrite', '-O'))
 
     def run_train(self, a:TrainArgs):
         config = TrainerConfig(
@@ -110,7 +109,7 @@ class CLI(BaseMLCLI):
             ) for t in ('train', 'test')
         ]
 
-        out_dir = f'out/models/{config.model_name}_{a.fold}'
+        out_dir = f'out/models/{config.model_name}_fold{a.fold}'
         if a.suffix:
             out_dir += f'_{a.suffix}'
 

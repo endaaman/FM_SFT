@@ -70,7 +70,7 @@ class ImageDataset(Dataset):
                  target,
                  crop_size=512,
                  input_size=512,
-                 fold=1,
+                 fold=0,
                  num_folds=5,
                  aug_mode='same',
                  normalize=True,
@@ -83,6 +83,8 @@ class ImageDataset(Dataset):
         self.num_folds = num_folds
         self.seed = seed
         self.autoload = autoload
+        self.crop_size = crop_size
+        self.input_size = input_size
 
         self.aug_mode = aug_mode
         self.normalize = normalize
@@ -106,16 +108,22 @@ class ImageDataset(Dataset):
 
         self.albu = A.Compose(aug)
 
-        df = self.load_df()
+        df_all = self.load_df()
         if fold < 0:
             # split by filenames
-            self.df = self.split_by_files(df)
+            self.df_all = self.split_by_files(df_all)
+            print(self.df_all)
         else:
             # split by patient folds
             folds = self.split_folds(num_folds)
-            fold = folds[fold]
-            self.df = self.split_by_fold(df, fold)
-        print(self.df)
+            self.df_all = self.split_by_fold(df_all, folds[fold])
+
+        if self.target == 'train':
+            self.df = self.df_all.loc[self.df_all['test'] == False]
+        elif self.target == 'test':
+            self.df = self.df_all.loc[self.df_all['test'] == True]
+        else:
+            self.df = self.df_all
         self.items = self.load_data() if autoload else []
 
     def split_folds(self, num_folds):
@@ -163,26 +171,17 @@ class ImageDataset(Dataset):
         return df_all
 
     def split_by_files(self, df):
-        df['test'] = False
         df_train, df_test = train_test_split(df, test_size=1/self.num_folds, stratify=df['label'], random_state=self.seed)
+        df_train['test'] = False
         df_test['test'] = True
-
-        if self.target == 'train':
-            df = df_train
-        elif self.target == 'test':
-            df = df_test
-        elif self.target == 'all':
-            df = pd.concat([df_train, df_test])
-        else:
-            raise ValueError(f'invalid target: {self.target}')
-        return df
+        return pd.concat([df_train, df_test])
 
     def load_data(self):
         labels = ['FM', 'SFT']
         items = []
         for i, row in tqdm(self.df.iterrows(), leave=False, total=len(self.df)):
             image = Image.open(row['path'])
-            ii = grid_split(image, self.input_size, overwrap=False, flattern=True)
+            ii = grid_split(image, self.crop_size, overwrap=False, flattern=True)
             for idx, i in enumerate(ii):
                 item = Item(
                     path=row['path'],
@@ -248,11 +247,13 @@ class CLI(BaseMLCLI):
 
     class DfArgs(CommonArgs):
         size: int = 512
+        fold: int = 1
 
-    def run_df(self, a:SamplesArgs):
-        ds = ImageDataset(target='all', crop_size=a.size, input_size=a.size, autoload=False, fold=2)
-        # ds.df.to_excel('out/df.xlsx')
-        self.ds = ds
+    def run_df(self, a:DfArgs):
+        train_ds = ImageDataset(target='train', autoload=False, fold=a.fold)
+        test_ds = ImageDataset(target='test', autoload=False, fold=a.fold)
+        print(train_ds.df)
+        print(test_ds.df)
 
 
 if __name__ == '__main__':
