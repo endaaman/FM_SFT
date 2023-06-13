@@ -76,11 +76,11 @@ class CLI(BaseMLCLI):
         pass
 
     class TrainArgs(CommonArgs):
-        lr: float = 0.0002
-        batch_size: int = Field(16, cli=('--batch-size', ))
+        lr: float = 0.0001
+        batch_size: int = Field(4, cli=('--batch-size', ))
         epoch: int = 20
         fold: int = -1
-        model_name: str = Field('tf_efficientnetv2_b0', cli=('--model', '-m'))
+        model_name: str = Field('efficientnet_b0', cli=('--model', '-m'))
         suffix: str = ''
         crop_size: int = Field(512, cli=('--crop-size', '-c'))
         input_size: int = Field(512, cli=('--input-size', '-i'))
@@ -131,37 +131,37 @@ class CLI(BaseMLCLI):
 
     def run_predict(self, a:PredictArgs):
         checkpoint = torch.load(J(a.model_dir, 'checkpoint_best.pt'))
-        with open(J(a.model_dir, 'config.json'), mode='r', encoding='utf-8') as f:
-            config = json.load(f)
-            config = TrainerConfig(**config)
+        config = TrainerConfig.from_file(J(a.model_dir, 'config.json'))
+
         device = 'cuda'
         model = TimmModel(name=config.model_name, num_classes=1)
         model.load_state_dict(checkpoint.model_state)
         model.to(device)
 
         images, paths = load_images_from_dir_or_file(a.src, with_path=True)
-        image, path = images[0], paths[0]
-        name = os.path.splitext(os.path.basename(path))[0]
-
-        gradcam = CAM.GradCAM(
-            model=model,
-            target_layers=[model.get_cam_layer()],
-            use_cuda=device=='cuda')
-
-        T = 0.47
-        t = pil_to_tensor(image)
-        t = t[:, :512, :512]
-        image = tensor_to_pil(t)
-        t = t[None, ...]
-        p = model(t.to(device), activate=True).cpu()
-        targets = [BinaryClassifierOutputTarget(p > T)]
-        mask = torch.from_numpy(gradcam(input_tensor=t, targets=targets))
-        heatmap, masked = overlay_heatmap(mask, pil_to_tensor(image), alpha=0.3, threshold=0.5)
-        d = f'{a.model_dir}/predict'
-        os.makedirs(d, exist_ok=True)
-        image.save(f'{d}/{name}.png')
-        tensor_to_pil(masked).save(f'{d}/{name}_masked.png')
-        print(p, p > T)
+        for image, path in zip(images, paths):
+            name = os.path.splitext(os.path.basename(path))[0]
+            gradcam = CAM.GradCAM(
+                model=model,
+                target_layers=[model.get_cam_layer()],
+                use_cuda=device=='cuda')
+            T = 0.47
+            t = pil_to_tensor(image)
+            t = t[:, :256, :256]
+            image = tensor_to_pil(t)
+            t = t[None, ...]
+            logit = model(t.to(device), activate=False).cpu()
+            p = torch.sigmoid(logit)
+            targets = [BinaryClassifierOutputTarget(p > T)]
+            mask = torch.from_numpy(gradcam(input_tensor=t, targets=targets))
+            heatmap, masked = overlay_heatmap(mask, pil_to_tensor(image), alpha=0.3, threshold=0.5)
+            p = p.item()
+            label = 'SFT' if p > T else 'FM'
+            d = f'{a.model_dir}/predict/{label}'
+            os.makedirs(d, exist_ok=True)
+            # image.save(f'{d}/{name}.png')
+            tensor_to_pil(masked).save(f'{d}/{name}.png')
+            print(path, p, p > T)
 
 
 if __name__ == '__main__':
