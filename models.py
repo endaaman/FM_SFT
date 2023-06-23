@@ -13,10 +13,15 @@ class TimmModel(nn.Module):
     def __init__(self, name, num_classes, pretrained=True):
         super().__init__()
         self.num_classes = num_classes
+        self.name = name
         self.base = timm.create_model(name, pretrained=pretrained, num_classes=num_classes)
 
     def get_cam_layer(self):
-        return self.base.conv_head
+        if re.match(r'.*efficientnet.*', self.name):
+            return [self.base.conv_head]
+        if re.match(r'^resnetrs_.*', self.name):
+            return [self.base.layer4[-1].act3]
+        return []
 
     def forward(self, x, activate=False):
         x = self.base(x)
