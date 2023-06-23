@@ -10,6 +10,7 @@ from torch import nn
 from torch import optim
 # import torch_optimizer as optim2
 from torchvision.utils import make_grid
+from torchvision import transforms
 from sklearn import metrics as skmetrics
 from tqdm import tqdm
 import pandas as pd
@@ -77,7 +78,7 @@ class CLI(BaseMLCLI):
 
     class TrainArgs(CommonArgs):
         lr: float = 0.0001
-        batch_size: int = Field(4, cli=('--batch-size', ))
+        batch_size: int = Field(4, cli=('--batch-size', '-B', ))
         epoch: int = 20
         fold: int = -1
         model_name: str = Field('efficientnet_b0', cli=('--model', '-m'))
@@ -139,17 +140,21 @@ class CLI(BaseMLCLI):
         model.to(device)
 
         images, paths = load_images_from_dir_or_file(a.src, with_path=True)
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=0.5, std=0.5),
+        ])
         for image, path in zip(images, paths):
             name = os.path.splitext(os.path.basename(path))[0]
             gradcam = CAM.GradCAM(
                 model=model,
-                target_layers=[model.get_cam_layer()],
+                target_layers=model.get_cam_layer(),
                 use_cuda=device=='cuda')
-            T = 0.47
-            t = pil_to_tensor(image)
-            t = t[:, :256, :256]
-            image = tensor_to_pil(t)
-            t = t[None, ...]
+            T = 0.5
+            t = transform(image)
+            SIZE = 512
+            image = image.crop((0, 0, SIZE, SIZE))
+            t = t[None, :, :SIZE, :SIZE]
             logit = model(t.to(device), activate=False).cpu()
             p = torch.sigmoid(logit)
             targets = [BinaryClassifierOutputTarget(p > T)]

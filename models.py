@@ -19,7 +19,7 @@ class TimmModel(nn.Module):
     def get_cam_layer(self):
         if re.match(r'.*efficientnet.*', self.name):
             return [self.base.conv_head]
-        if re.match(r'^resnetrs_.*', self.name):
+        if re.match(r'^resnetrs.*', self.name):
             return [self.base.layer4[-1].act3]
         return []
 
