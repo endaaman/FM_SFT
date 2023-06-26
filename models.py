@@ -16,7 +16,7 @@ class TimmModel(nn.Module):
         self.name = name
         self.base = timm.create_model(name, pretrained=pretrained, num_classes=num_classes)
 
-    def get_cam_layer(self):
+    def get_cam_layers(self):
         if re.match(r'.*efficientnet.*', self.name):
             return [self.base.conv_head]
         if re.match(r'^resnetrs.*', self.name):

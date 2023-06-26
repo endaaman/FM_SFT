@@ -148,7 +148,7 @@ class CLI(BaseMLCLI):
             name = os.path.splitext(os.path.basename(path))[0]
             gradcam = CAM.GradCAM(
                 model=model,
-                target_layers=model.get_cam_layer(),
+                target_layers=model.get_cam_layers(),
                 use_cuda=device=='cuda')
             T = 0.5
             t = transform(image)
